@@ -177,6 +177,11 @@ function applyMove(room, player, entity, msg) {
     return applyMovePapel(room, player, entity, msg);
   }
 
+  if (msg.erase) {
+    if (entity.finished || entity.eliminated) return null;
+    return applyBorrarCelda(room, player, entity, msg, false);
+  }
+
   var index = parseInt(msg.index, 10);
   var value = parseInt(msg.value, 10);
   if (isNaN(index) || index < 0 || index > 80) return null;
@@ -232,6 +237,10 @@ function applyMovePapel(room, player, entity, msg) {
   }
   if (entity.finished || entity.eliminated) return null; // ya entregó, no se puede seguir escribiendo
 
+  if (msg.erase) {
+    return applyBorrarCelda(room, player, entity, msg, true);
+  }
+
   var index = parseInt(msg.index, 10);
   var value = parseInt(msg.value, 10);
   if (isNaN(index) || index < 0 || index > 80) return null;
@@ -246,6 +255,35 @@ function applyMovePapel(room, player, entity, msg) {
 
   return {
     response: { type: 'move_result', papel: true, index: index, value: value },
+    broadcastExtra: broadcastExtra
+  };
+}
+
+// ---------- BORRAR CELDA (ambos modos) ----------
+// Limpia un número ya escrito (y sus notas, del lado del cliente) para
+// poder reconsiderarlo — no aplica sobre casillas fijas del enunciado.
+function applyBorrarCelda(room, player, entity, msg, esPapel) {
+  var index = parseInt(msg.index, 10);
+  if (isNaN(index) || index < 0 || index > 80) return null;
+  if (room.gameState.puzzle[index] !== 0) return null; // celda fija, no se borra
+  if (entity.board[index] === 0) return null;          // ya estaba vacía
+
+  entity.board[index] = 0;
+
+  if (!esPapel) {
+    var solved = 0;
+    for (var s = 0; s < 81; s++) {
+      if (room.gameState.puzzle[s] === 0 && entity.board[s] !== 0) solved++;
+    }
+    entity.progress = Math.round((solved / room.gameState.totalEmpty) * 100);
+  }
+
+  var broadcastExtra = (room.mode === 'equipos')
+    ? { type: 'team_cell', team: player.team, index: index, erased: true, papel: esPapel, by: player.name }
+    : null;
+
+  return {
+    response: { type: 'move_result', erased: true, papel: esPapel, index: index, progress: entity.progress },
     broadcastExtra: broadcastExtra
   };
 }

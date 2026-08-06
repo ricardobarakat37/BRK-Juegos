@@ -1,0 +1,23 @@
+name: Deploy Sudoku
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Sudoku/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to GoDaddy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./Sudoku/
+          server-dir: /public_html/juegos/sudoku/

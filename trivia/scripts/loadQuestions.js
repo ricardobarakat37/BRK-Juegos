@@ -159,6 +159,14 @@ async function loadCategory(cat) {
         q.question = translated[ti++] || q.question;
         q.options = [translated[ti++]||q.options[0], translated[ti++]||q.options[1], translated[ti++]||q.options[2], translated[ti++]||q.options[3]];
 
+        // Solo guardar si parece español
+        const looksSpanish = /[áéíóúñü¿¡]/i.test(q.question) ||
+          !/\b(the|is|are|was|were|which|what|who|how|when|where|does|did|in|of|a|an)\b/i.test(q.question);
+        if (!looksSpanish) {
+          console.log('Descartada (inglés):', q.question.substring(0, 60));
+          continue;
+        }
+
         await db.query(
           'INSERT IGNORE INTO preguntas (id, category, question, opt1, opt2, opt3, opt4, correct_index, difficulty) VALUES (?,?,?,?,?,?,?,?,?)',
           [q.id, q.category, q.question, q.options[0], q.options[1], q.options[2], q.options[3], q.correct, q.difficulty]
@@ -195,6 +203,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (args.includes('--clean')) {
+    await cleanEnglish();
+    process.exit(0);
+  }
+
   let total = 0;
   for (const cat of CATEGORIES) {
     total += await loadCategory(cat);
@@ -204,3 +217,41 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
+
+// =====================================================
+// LIMPIEZA — borra preguntas en inglés de la DB
+// Corre UNA SOLA VEZ: node scripts/loadQuestions.js --clean
+// =====================================================
+async function cleanEnglish() {
+  console.log('Buscando preguntas en inglés...');
+  const [rows] = await db.query('SELECT id, question FROM preguntas');
+  
+  let deleted = 0;
+  const toDelete = [];
+
+  for (const row of rows) {
+    const q = row.question || '';
+    // Solo borrar si claramente está en inglés:
+    // - empieza con palabras interrogativas inglesas típicas
+    // - no tiene ningún caracter español
+    const startsEnglish = /^(which|what|who|how|when|where|in which|according|true or false)/i.test(q.trim());
+    const hasSpanish = /[áéíóúñü¿¡]|\b(cuál|cuáles|quién|cómo|dónde|cuándo|qué|es|fue|son|era|están|tiene|tienen|se|del|de la|en el|en la|los|las|una|uno|para|con|por|sobre|entre|durante)/i.test(q);
+    if (startsEnglish && !hasSpanish) {
+      toDelete.push(row.id);
+    }
+  }
+
+  console.log(`Encontradas ${toDelete.length} preguntas en inglés de ${rows.length} totales`);
+
+  if (toDelete.length > 0) {
+    // Borrar en lotes de 100
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const batch = toDelete.slice(i, i + 100);
+      await db.query('DELETE FROM preguntas WHERE id IN (?)', [batch]);
+      deleted += batch.length;
+      console.log(`Borradas: ${deleted}/${toDelete.length}`);
+    }
+  }
+
+  console.log(`✅ Limpieza completa. Borradas: ${deleted}`);
+}

@@ -145,8 +145,12 @@ app.post('/verify', async (req, res) => {
   }
 });
 
-// ---- Reset jugadas ----
+// ---- Reset jugadas (admin only) ----
 app.post('/reset', async (req, res) => {
+  const { adminKey } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
   try {
     await db.query('DELETE FROM jugadas');
     res.json({ success: true });

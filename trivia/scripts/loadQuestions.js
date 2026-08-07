@@ -33,8 +33,8 @@ const CATEGORIES = [
   { id: 32, name: 'Entertainment: Cartoon & Animations' },
 ];
 
-async function translateChunk(texts) {
-  const prompt = `Traduce estos textos del inglés al español. Respeta sin traducir: nombres de personas, bandas, canciones, películas, series, países, ciudades y marcas. Devuelve SOLO un array JSON con las traducciones en el mismo orden, sin explicaciones ni markdown.\n\n${JSON.stringify(texts)}`;
+async function translateOne(text) {
+  const prompt = `Translate this text from English to Spanish. Keep proper nouns, band names, song titles, movie titles, country names, and brand names in their original form or official Spanish name. Reply with ONLY the translation, nothing else:\n\n${text}`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -45,32 +45,26 @@ async function translateChunk(texts) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: 1024,
+      max_tokens: 256,
       messages: [{ role: 'user', content: prompt }]
     })
   });
 
   const data = await response.json();
-  const text = data.content?.[0]?.text || '[]';
-  const clean = text.replace(/```json|```/g, '').trim();
-  const translated = JSON.parse(clean);
-  if (Array.isArray(translated) && translated.length === texts.length) return translated;
-  return texts;
+  return data.content?.[0]?.text?.trim() || text;
 }
 
 async function translateWithClaude(texts) {
-  // Traducir de a 5 textos (1 pregunta + 4 opciones) para evitar JSON cortado
   const results = [];
-  for (let i = 0; i < texts.length; i += 5) {
-    const chunk = texts.slice(i, i + 5);
+  for (const text of texts) {
     try {
-      const translated = await translateChunk(chunk);
-      results.push(...translated);
+      const translated = await translateOne(text);
+      results.push(translated);
     } catch(e) {
-      console.log('Error en chunk, guardando en inglés:', e.message);
-      results.push(...chunk);
+      console.log('Error traduciendo:', e.message);
+      results.push(text);
     }
-    await sleep(500); // pequeña pausa entre chunks
+    await sleep(100);
   }
   return results;
 }
@@ -186,8 +180,21 @@ async function loadCategory(cat) {
   return saved;
 }
 
+async function clearAll() {
+  await db.query('DELETE FROM jugadas');
+  await db.query('DELETE FROM preguntas');
+  console.log('🗑️  Base de datos limpiada');
+}
+
 async function main() {
+  const args = process.argv.slice(2);
   await createTable();
+
+  if (args.includes('--clear')) {
+    await clearAll();
+    process.exit(0);
+  }
+
   let total = 0;
   for (const cat of CATEGORIES) {
     total += await loadCategory(cat);

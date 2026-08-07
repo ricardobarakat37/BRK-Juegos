@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config();
 const mysql = require('mysql2/promise');
 const axios = require('axios');
 
@@ -33,7 +33,7 @@ const CATEGORIES = [
   { id: 32, name: 'Entertainment: Cartoon & Animations' },
 ];
 
-async function translateWithClaude(texts) {
+async function translateChunk(texts) {
   const prompt = `Traduce estos textos del inglés al español. Respeta sin traducir: nombres de personas, bandas, canciones, películas, series, países, ciudades y marcas. Devuelve SOLO un array JSON con las traducciones en el mismo orden, sin explicaciones ni markdown.\n\n${JSON.stringify(texts)}`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -45,7 +45,7 @@ async function translateWithClaude(texts) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: 2048,
+      max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -56,6 +56,23 @@ async function translateWithClaude(texts) {
   const translated = JSON.parse(clean);
   if (Array.isArray(translated) && translated.length === texts.length) return translated;
   return texts;
+}
+
+async function translateWithClaude(texts) {
+  // Traducir de a 5 textos (1 pregunta + 4 opciones) para evitar JSON cortado
+  const results = [];
+  for (let i = 0; i < texts.length; i += 5) {
+    const chunk = texts.slice(i, i + 5);
+    try {
+      const translated = await translateChunk(chunk);
+      results.push(...translated);
+    } catch(e) {
+      console.log('Error en chunk, guardando en inglés:', e.message);
+      results.push(...chunk);
+    }
+    await sleep(500); // pequeña pausa entre chunks
+  }
+  return results;
 }
 
 async function sleep(ms) {

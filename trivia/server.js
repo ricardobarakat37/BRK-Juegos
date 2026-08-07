@@ -145,5 +145,15 @@ app.post('/verify', async (req, res) => {
   }
 });
 
+// ---- Reset jugadas ----
+app.post('/reset', async (req, res) => {
+  try {
+    await db.query('DELETE FROM jugadas');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`BRK Trivia corriendo en puerto ${PORT}`));

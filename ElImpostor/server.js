@@ -14,9 +14,9 @@ var http = require('http');
 var WebSocket = require('ws');
 var palabras = require('./palabras');
 
-var TURNO_SEGUNDOS = 25;
-var VOTACION_SEGUNDOS = 40;
-var ADIVINANZA_SEGUNDOS = 20;
+var TURNO_SEGUNDOS = 180;
+var VOTACION_SEGUNDOS = 180;
+var ADIVINANZA_SEGUNDOS = 120;
 var MIN_JUGADORES = 4;
 var MAX_JUGADORES = 10;
 
@@ -89,7 +89,7 @@ function publicPlayers(room) {
 }
 
 function broadcastPlayers(room) {
-  broadcast(room, { type: 'players', players: publicPlayers(room), state: room.state, config: room.config });
+  broadcast(room, { type: 'players', players: publicPlayers(room), state: room.state, config: room.config, wins: room.wins });
 }
 
 function limpiarTemporizador(room) {
@@ -245,7 +245,7 @@ function resolverVotacion(room) {
   broadcastPlayers(room);
 
   var rolEliminado = room.players[eliminadoId].role;
-  if (rolEliminado === 'impostor' || rolEliminado === 'mrwhite') {
+  if (rolEliminado === 'mrwhite') {
     ofrecerAdivinanza(room, eliminadoId);
   } else {
     setTimeout(function () { revisarFinDePartida(room); }, 3000);
@@ -297,7 +297,21 @@ function terminarPartida(room, ganador) {
   for (var id in room.players) {
     roles[id] = { name: room.players[id].name, role: room.players[id].role, word: room.players[id].word, alive: room.players[id].alive };
   }
-  broadcast(room, { type: 'game_over', winner: ganador, roles: roles, palabraCiudadanos: room.palabraCiudadanos, palabraImpostor: room.palabraImpostor, categoria: room.categoria });
+
+  // Puntos acumulados de la sala: Mr. White vale 2 (es el rol más difícil de ganar),
+  // impostor y cada ciudadano ganador valen 1.
+  if (!room.wins) room.wins = {};
+  for (var pid in room.players) {
+    var jugador = room.players[pid];
+    var gano = (ganador === 'ciudadanos' && jugador.role === 'ciudadano') ||
+               (ganador === 'impostor' && jugador.role === 'impostor') ||
+               (ganador === 'mrwhite' && jugador.role === 'mrwhite');
+    if (!gano) continue;
+    var puntos = jugador.role === 'mrwhite' ? 2 : 1;
+    room.wins[jugador.name] = (room.wins[jugador.name] || 0) + puntos;
+  }
+
+  broadcast(room, { type: 'game_over', winner: ganador, roles: roles, palabraCiudadanos: room.palabraCiudadanos, palabraImpostor: room.palabraImpostor, categoria: room.categoria, wins: room.wins });
 }
 
 // ============================================================
@@ -323,7 +337,7 @@ wss.on('connection', function (ws) {
       rooms[code] = {
         code: code, hostId: playerId, state: 'lobby',
         config: { impostores: 1, mrwhites: 0 },
-        players: {}, createdAt: Date.now()
+        players: {}, wins: {}, createdAt: Date.now()
       };
       rooms[code].players[playerId] = { name: name, ws: ws, alive: true, role: null, word: null };
       ws.playerId = playerId; ws.roomCode = code;
@@ -356,7 +370,7 @@ wss.on('connection', function (ws) {
       if (rp.ws && rp.ws !== ws && rp.ws.readyState === WebSocket.OPEN) { try { rp.ws.terminate(); } catch (e2) {} }
       rp.ws = ws; ws.playerId = rId; ws.roomCode = rCode;
 
-      var snapshot = { type: 'resumed', code: rCode, playerId: rId, isHost: rId === rRoom.hostId, state: rRoom.state, config: rRoom.config, players: publicPlayers(rRoom) };
+      var snapshot = { type: 'resumed', code: rCode, playerId: rId, isHost: rId === rRoom.hostId, state: rRoom.state, config: rRoom.config, players: publicPlayers(rRoom), wins: rRoom.wins };
       if (rRoom.state !== 'lobby' && rp.role) {
         snapshot.role = rp.role; snapshot.word = rp.word; snapshot.categoria = rRoom.categoria;
       }
